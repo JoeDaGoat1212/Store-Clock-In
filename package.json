@@ -1,0 +1,6 @@
+{
+  "name": "concession-time-clock",
+  "private": true,
+  "type": "module",
+  "engines": { "node": ">=18" }
+}

@@ -1,0 +1,804 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#f2b705">
+<title>Concession Time Clock</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Ccircle cx='32' cy='32' r='28' fill='%23f2b705'/%3E%3Cpath d='M32 16v17l11 7' stroke='%233a2c00' stroke-width='6' fill='none' stroke-linecap='round'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Anton&family=Figtree:wght@400;500;600;700&family=JetBrains+Mono:wght@500;700&display=swap">
+<style>
+/* Layout: concession-counter kiosk — big clock + keypad on the left, "on the clock" and "today" boards on the right; manager office behind a PIN. */
+:root{
+  --bg:#f6f3ec; --panel:#ffffff; --ink:#1f1d1a; --muted:#6d675c; --line:#e3ddcf;
+  --mustard:#f2b705; --mustard-ink:#3a2c00; --ketchup:#c8321f; --relish:#2f8a4a;
+  --key:#fbf8f1; --key-press:#efe8d6; --shadow:0 1px 0 rgba(60,45,10,.08),0 6px 18px rgba(60,45,10,.06);
+  --f-display:"Anton","Impact","Arial Narrow",sans-serif;
+  --f-body:"Figtree",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --f-mono:"JetBrains Mono",ui-monospace,"SF Mono",Menlo,monospace;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#17150f; --panel:#221f17; --ink:#f3eedf; --muted:#a59d8a; --line:#3a3528;
+  --mustard:#f5c22b; --mustard-ink:#2a1f00; --ketchup:#e5553f; --relish:#4cb46a;
+  --key:#2a261c; --key-press:#353024; --shadow:0 1px 0 rgba(0,0,0,.3),0 6px 18px rgba(0,0,0,.25); color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#17150f; --panel:#221f17; --ink:#f3eedf; --muted:#a59d8a; --line:#3a3528;
+  --mustard:#f5c22b; --mustard-ink:#2a1f00; --ketchup:#e5553f; --relish:#4cb46a;
+  --key:#2a261c; --key-press:#353024; --shadow:0 1px 0 rgba(0,0,0,.3),0 6px 18px rgba(0,0,0,.25); color-scheme:dark}
+
+*{box-sizing:border-box}
+html{color-scheme:light}
+[hidden]{display:none!important}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--f-body);font-size:16px;line-height:1.45;
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:16px 32px}
+button{font:inherit;color:inherit;cursor:pointer}
+button:focus-visible,input:focus-visible,select:focus-visible{outline:3px solid var(--mustard);outline-offset:2px}
+.wrap{max-width:1180px;margin:0 auto;display:flex;flex-direction:column;gap:20px}
+
+.top{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.brand{display:flex;align-items:center;gap:12px;min-width:0}
+.ticket{background:var(--mustard);color:var(--mustard-ink);font-family:var(--f-display);font-size:13px;letter-spacing:.08em;
+  padding:6px 10px;border-radius:4px;text-transform:uppercase;white-space:nowrap}
+.brand h1{font-family:var(--f-display);font-weight:400;font-size:clamp(24px,4vw,34px);margin:0;letter-spacing:.01em;line-height:1.05;text-wrap:balance}
+.topbtns{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.ghost{background:transparent;border:1.5px solid var(--line);border-radius:999px;padding:9px 16px;font-weight:600;font-size:14px}
+.ghost:hover{border-color:var(--muted)}
+.badge-n{display:inline-grid;place-items:center;min-width:20px;height:20px;padding:0 6px;margin-left:6px;border-radius:999px;background:var(--ketchup);color:#fff;font-size:12px;font-weight:700}
+.status{font-size:14px;color:var(--muted)}
+.status.warn{color:var(--ketchup);font-weight:600}
+
+.kiosk{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(0,1fr);gap:20px;align-items:start}
+@media (max-width:820px){.kiosk{grid-template-columns:1fr}}
+.side{display:flex;flex-direction:column;gap:20px;min-width:0}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:14px;box-shadow:var(--shadow)}
+.punch{padding:24px;display:flex;flex-direction:column;gap:18px;align-items:center}
+.clock{font-family:var(--f-display);font-size:clamp(64px,12vw,112px);line-height:.95;letter-spacing:.01em;font-variant-numeric:tabular-nums}
+.clock small{font-size:.38em;margin-left:.15em;color:var(--muted)}
+.date{color:var(--muted);font-weight:500;margin-top:-10px}
+.prompt{font-weight:700;font-size:18px;text-align:center}
+.prompt span{display:block;font-weight:400;font-size:14px;color:var(--muted)}
+.code{display:flex;gap:12px;justify-content:center;min-height:30px;align-items:center}
+.dot{width:20px;height:20px;border-radius:50%;border:2.5px solid var(--muted);transition:transform .1s}
+.dot.on{background:var(--ink);border-color:var(--ink);transform:scale(1.08)}
+.code.shake{animation:shake .35s}
+@keyframes shake{25%{transform:translateX(-8px)}50%{transform:translateX(8px)}75%{transform:translateX(-4px)}}
+.codetext{font-family:var(--f-mono);font-size:22px;letter-spacing:.2em}
+.pad{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;width:100%;max-width:360px}
+.key{background:var(--key);border:1.5px solid var(--line);border-radius:12px;height:72px;font-family:var(--f-mono);font-size:28px;font-weight:700;
+  touch-action:manipulation;user-select:none;transition:transform .06s,background .1s}
+.key:active{transform:scale(.96);background:var(--key-press)}
+.key.small{font-family:var(--f-body);font-size:16px;font-weight:600;color:var(--muted)}
+.key.go{background:var(--mustard);border-color:var(--mustard);color:var(--mustard-ink);font-family:var(--f-display);font-size:24px;letter-spacing:.04em;font-weight:400}
+.hint{font-size:13px;color:var(--muted);text-align:center;max-width:36ch;margin:0}
+.newbtn{background:transparent;border:2px dashed var(--line);border-radius:12px;padding:12px 18px;font-weight:700;font-size:15px;width:100%;max-width:360px}
+.newbtn:hover{border-color:var(--mustard)}
+.newbtn span{color:var(--muted);font-weight:500}
+
+.board{padding:20px;display:flex;flex-direction:column;gap:14px}
+.board h2,.office h2,.sheet h2{font-family:var(--f-display);font-weight:400;font-size:24px;margin:0;letter-spacing:.02em}
+.board header{display:flex;align-items:baseline;justify-content:space-between;gap:10px}
+.count{font-family:var(--f-mono);font-size:14px;color:var(--muted)}
+.onlist{list-style:none;margin:0;padding:0;display:flex;flex-direction:column}
+.onlist li{display:flex;align-items:center;gap:12px;padding:12px 0;border-top:1px dashed var(--line)}
+.onlist li:first-child{border-top:0}
+.live{width:10px;height:10px;border-radius:50%;background:var(--relish);box-shadow:0 0 0 4px color-mix(in srgb,var(--relish) 22%,transparent);flex:none}
+.done{width:10px;height:10px;border-radius:50%;background:var(--line);flex:none}
+.onlist .who{font-weight:700;flex:1;min-width:0;overflow-wrap:anywhere}
+.onlist .since{color:var(--muted);font-size:14px;text-align:right}
+.onlist .dur{font-family:var(--f-mono);font-weight:700;font-variant-numeric:tabular-nums;min-width:68px;text-align:right}
+.empty{color:var(--muted);font-size:15px;padding:8px 0}
+
+/* overlays */
+.overlay{position:fixed;inset:0;display:grid;place-items:center;padding:24px;background:color-mix(in srgb,var(--bg) 70%,transparent);backdrop-filter:blur(4px);z-index:20;overflow-y:auto}
+.result{width:min(520px,100%);border-radius:18px;padding:32px 28px;text-align:center;color:#fff;display:flex;flex-direction:column;gap:10px;box-shadow:0 20px 60px rgba(0,0,0,.25);animation:pop .22s ease-out}
+@keyframes pop{from{transform:scale(.94);opacity:.4}}
+.result.in{background:var(--relish)}
+.result.out{background:var(--ketchup)}
+.result.err{background:var(--panel);color:var(--ink);border:2px solid var(--ketchup)}
+.result.ok{background:var(--panel);color:var(--ink);border:2px solid var(--relish)}
+.result .verb{font-family:var(--f-display);font-size:clamp(40px,9vw,64px);line-height:1;letter-spacing:.02em}
+.result .name{font-size:24px;font-weight:700}
+.result .detail{font-size:17px;opacity:.95}
+.result .week{display:inline-block;margin:4px auto 0;font-family:var(--f-mono);font-size:15px;padding:6px 12px;border-radius:999px;background:rgba(0,0,0,.15)}
+.result .row{display:flex;gap:10px;justify-content:center;margin-top:10px;flex-wrap:wrap}
+.result button{border:2px solid currentColor;background:transparent;border-radius:999px;padding:10px 20px;font-weight:700}
+.result.err button,.result.ok button{border-color:var(--line)}
+@media (prefers-reduced-motion:reduce){.result,.code.shake{animation:none}}
+
+.sheet{width:min(460px,100%);background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:26px 24px;display:flex;flex-direction:column;gap:14px;box-shadow:0 20px 60px rgba(0,0,0,.2);animation:pop .22s ease-out}
+.sheet p{margin:0;color:var(--muted);font-size:14px}
+.sheet .field input{font-size:20px;padding:12px}
+.sheet .pinpair{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.sheet .pinpair input{font-family:var(--f-mono);letter-spacing:.3em;text-align:center}
+.sheet .row{display:flex;gap:10px;justify-content:flex-end;flex-wrap:wrap}
+.sheet .btn{padding:12px 20px;font-size:15px}
+.linkish{background:none;border:0;padding:0;color:var(--muted);text-decoration:underline;font-size:13px;font-weight:600;align-self:flex-start}
+
+/* manager office */
+.office{padding:20px;display:flex;flex-direction:column;gap:18px}
+.office-top{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}
+.tabs{display:flex;gap:6px;flex-wrap:wrap}
+.tab{background:transparent;border:1.5px solid var(--line);border-radius:999px;padding:8px 16px;font-weight:600;font-size:14px}
+.tab[aria-selected="true"]{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+.toolbar{display:flex;gap:10px;flex-wrap:wrap;align-items:end}
+.field{display:flex;flex-direction:column;gap:4px;font-size:13px;font-weight:600;color:var(--muted);min-width:0}
+.field input,.field select{font:inherit;font-size:15px;color:var(--ink);background:var(--bg);border:1.5px solid var(--line);border-radius:8px;padding:9px 10px;min-width:0}
+.btn{background:var(--ink);color:var(--bg);border:0;border-radius:8px;padding:10px 16px;font-weight:700;font-size:14px}
+.btn.alt{background:var(--mustard);color:var(--mustard-ink)}
+.btn.go{background:var(--relish);color:#fff}
+.btn.line{background:transparent;color:var(--ink);border:1.5px solid var(--line)}
+.btn.danger{background:transparent;color:var(--ketchup);border:1.5px solid color-mix(in srgb,var(--ketchup) 45%,transparent)}
+.btn:disabled{opacity:.5;cursor:default}
+.totals{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:10px}
+.tot{border:1px solid var(--line);border-radius:10px;padding:12px 14px;display:flex;flex-direction:column;gap:2px}
+.tot.all{border-color:var(--mustard);background:color-mix(in srgb,var(--mustard) 8%,transparent)}
+.tot .n{font-weight:700;overflow-wrap:anywhere}
+.tot .h{font-family:var(--f-mono);font-size:22px;font-weight:700;font-variant-numeric:tabular-nums}
+.tot .s{font-size:13px;color:var(--muted)}
+.tablewrap{overflow-x:auto;border:1px solid var(--line);border-radius:10px}
+table{border-collapse:collapse;width:100%;min-width:640px;font-size:14px}
+th{text-align:left;font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);font-weight:700;padding:10px 12px;border-bottom:1px solid var(--line);background:var(--bg)}
+td{padding:10px 12px;border-bottom:1px solid var(--line);vertical-align:middle}
+tr:last-child td{border-bottom:0}
+td.num{font-family:var(--f-mono);font-variant-numeric:tabular-nums;white-space:nowrap}
+td input{font:inherit;font-size:13px;color:var(--ink);background:var(--bg);border:1.5px solid var(--line);border-radius:6px;padding:6px 7px;min-width:0;width:100%}
+.pill{display:inline-block;font-size:12px;font-weight:700;padding:3px 9px;border-radius:999px;background:color-mix(in srgb,var(--relish) 18%,transparent);color:var(--relish);white-space:nowrap}
+.pill.flag{background:color-mix(in srgb,var(--ketchup) 15%,transparent);color:var(--ketchup)}
+.pill.wait{background:color-mix(in srgb,var(--mustard) 25%,transparent);color:var(--ink)}
+.acts{display:flex;gap:6px;justify-content:flex-end;flex-wrap:wrap}
+.acts .btn{padding:6px 10px;font-size:13px}
+.note{font-size:14px;color:var(--muted);max-width:65ch;margin:0}
+.banner{border:1.5px solid var(--mustard);background:color-mix(in srgb,var(--mustard) 14%,transparent);border-radius:10px;padding:12px 14px;font-size:14px}
+.pending{border:1.5px solid var(--mustard);border-radius:12px;padding:14px;display:flex;flex-direction:column;gap:10px}
+.pending h3{margin:0;font-size:15px}
+.preq{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding-top:10px;border-top:1px dashed var(--line)}
+.preq:first-of-type{border-top:0;padding-top:0}
+.preq .who{font-weight:700;flex:1;min-width:120px;overflow-wrap:anywhere}
+.preq .meta{font-size:13px;color:var(--muted)}
+.form-row{display:grid;grid-template-columns:minmax(0,2fr) minmax(0,1fr) minmax(0,1.3fr) auto;gap:10px;align-items:end}
+.form-row.shift{grid-template-columns:minmax(0,1.6fr) minmax(0,1.2fr) minmax(0,1fr) minmax(0,1fr) auto}
+@media (max-width:720px){.form-row,.form-row.shift{grid-template-columns:1fr 1fr}.form-row .field:first-child{grid-column:1/-1}}
+details.addshift{border:1px solid var(--line);border-radius:10px;padding:12px 14px}
+details.addshift summary{cursor:pointer;font-weight:700;font-size:14px}
+details.addshift[open] summary{margin-bottom:12px}
+.msg{font-size:14px;font-weight:600}
+.msg.bad{color:var(--ketchup)} .msg.good{color:var(--relish)}
+.confirm{display:flex;gap:6px;align-items:center;flex-wrap:wrap;justify-content:flex-end;font-size:13px}
+.switch{display:flex;align-items:center;gap:10px;font-size:15px;font-weight:600}
+.switch input{width:20px;height:20px;accent-color:var(--relish)}
+.setgroup{display:flex;flex-direction:column;gap:12px;padding-bottom:18px;border-bottom:1px solid var(--line)}
+.setgroup:last-child{border-bottom:0}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <div class="top">
+    <div class="brand">
+      <span class="ticket">Time clock</span>
+      <h1 id="storeName">Concession Stand</h1>
+    </div>
+    <div class="topbtns">
+      <span class="status" id="status">Connecting…</span>
+      <button class="ghost" id="mgrBtn" type="button">Manager</button>
+    </div>
+  </div>
+
+  <!-- KIOSK -->
+  <section id="kiosk" class="kiosk">
+    <div class="panel punch">
+      <div class="clock" id="clock">--:--</div>
+      <div class="date" id="date"></div>
+      <div class="prompt" id="prompt">Enter your PIN<span>or scan your badge</span></div>
+      <div class="code" id="code" aria-live="polite"></div>
+      <div class="pad" id="pad">
+        <button class="key" type="button" data-k="1">1</button>
+        <button class="key" type="button" data-k="2">2</button>
+        <button class="key" type="button" data-k="3">3</button>
+        <button class="key" type="button" data-k="4">4</button>
+        <button class="key" type="button" data-k="5">5</button>
+        <button class="key" type="button" data-k="6">6</button>
+        <button class="key" type="button" data-k="7">7</button>
+        <button class="key" type="button" data-k="8">8</button>
+        <button class="key" type="button" data-k="9">9</button>
+        <button class="key small" type="button" data-k="clear">Clear</button>
+        <button class="key" type="button" data-k="0">0</button>
+        <button class="key go" type="button" data-k="go">Enter</button>
+      </div>
+      <p class="hint">Same PIN clocks you in and out. Tap Undo if you hit it by mistake.</p>
+      <button class="newbtn" id="newBtn" type="button">New here? Create account <span>· takes 20 seconds</span></button>
+    </div>
+
+    <div class="side">
+      <div class="panel board">
+        <header><h2>On the clock</h2><span class="count" id="onCount">0</span></header>
+        <ul class="onlist" id="onList"></ul>
+      </div>
+      <div class="panel board">
+        <header><h2>Today</h2><span class="count" id="todayCount"></span></header>
+        <ul class="onlist" id="todayList"></ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- MANAGER -->
+  <section id="office" class="panel office" hidden>
+    <div class="office-top">
+      <h2>Manager</h2>
+      <div class="tabs" role="tablist">
+        <button class="tab" role="tab" data-tab="hours" aria-selected="true" type="button">Hours</button>
+        <button class="tab" role="tab" data-tab="staff" aria-selected="false" type="button">Employees<span class="badge-n" id="pendTab" hidden></span></button>
+        <button class="tab" role="tab" data-tab="settings" aria-selected="false" type="button">Settings</button>
+      </div>
+      <button class="btn line" id="closeOffice" type="button">Back to time clock</button>
+    </div>
+    <div id="defaultPinBanner" class="banner" hidden>The manager PIN is still the default <b>0000</b>. Change it in Settings so employees can't edit hours.</div>
+
+    <!-- hours -->
+    <div id="tab-hours" style="display:flex;flex-direction:column;gap:16px">
+      <div class="toolbar">
+        <label class="field">Period
+          <select id="range">
+            <option value="thisweek">This week</option>
+            <option value="lastweek">Last week</option>
+            <option value="today">Today</option>
+            <option value="thismonth">This month</option>
+            <option value="custom">Custom dates</option>
+          </select>
+        </label>
+        <label class="field" id="fromWrap" hidden>From <input type="date" id="from"></label>
+        <label class="field" id="toWrap" hidden>To <input type="date" id="to"></label>
+        <label class="field">Employee
+          <select id="empFilter"><option value="">Everyone</option></select>
+        </label>
+        <button class="btn alt" id="exportBtn" type="button">Download CSV</button>
+        <span id="allOutWrap"></span>
+        <span class="msg" id="exportMsg"></span>
+      </div>
+      <div class="totals" id="totals"></div>
+      <details class="addshift" id="addShiftBox">
+        <summary>Add a missed shift</summary>
+        <form id="shiftForm" class="form-row shift" novalidate>
+          <label class="field">Employee <select id="sEmp"></select></label>
+          <label class="field">Date <input type="date" id="sDate"></label>
+          <label class="field">In <input type="time" id="sIn" value="15:00"></label>
+          <label class="field">Out <input type="time" id="sOut" value="17:00"></label>
+          <button class="btn" type="submit">Add shift</button>
+        </form>
+        <span class="msg" id="shiftMsg"></span>
+      </details>
+      <div class="tablewrap">
+        <table>
+          <thead><tr><th>Employee</th><th>Date</th><th>In</th><th>Out</th><th>Hours</th><th></th></tr></thead>
+          <tbody id="shiftRows"></tbody>
+        </table>
+      </div>
+      <p class="note">Shifts longer than 8 hours are flagged; that usually means someone forgot to clock out. Tap Edit to fix the times.</p>
+    </div>
+
+    <!-- staff -->
+    <div id="tab-staff" hidden style="display:flex;flex-direction:column;gap:16px">
+      <div class="pending" id="pendingBox" hidden></div>
+      <form id="addForm" class="form-row" novalidate>
+        <label class="field">Name <input id="newName" type="text" maxlength="40" placeholder="First name and last initial" autocomplete="off"></label>
+        <label class="field">4-digit PIN <input id="newPin" type="text" inputmode="numeric" maxlength="4" placeholder="e.g. 4821" autocomplete="off"></label>
+        <label class="field">Badge code (optional) <input id="newBadge" type="text" maxlength="40" placeholder="Student ID #" autocomplete="off"></label>
+        <button class="btn" type="submit">Add employee</button>
+      </form>
+      <span class="msg" id="addMsg"></span>
+      <div class="tablewrap">
+        <table>
+          <thead><tr><th>Name</th><th>PIN</th><th>Badge code</th><th>This week</th><th>Status</th><th></th></tr></thead>
+          <tbody id="staffRows"></tbody>
+        </table>
+      </div>
+      <p class="note">Badge code is the number printed under the barcode on a student ID. With a USB barcode scanner plugged into this device, a scan clocks them in or out with no typing.</p>
+    </div>
+
+    <!-- settings -->
+    <div id="tab-settings" hidden style="display:flex;flex-direction:column;gap:18px;max-width:560px">
+      <div class="setgroup">
+        <form id="nameForm" class="toolbar" novalidate>
+          <label class="field" style="flex:1">Store name <input id="setName" type="text" maxlength="40"></label>
+          <button class="btn" type="submit">Save</button>
+        </form>
+      </div>
+      <div class="setgroup">
+        <form id="pinForm" class="toolbar" novalidate>
+          <label class="field" style="flex:1">New manager PIN <input id="setPin" type="text" inputmode="numeric" maxlength="6" placeholder="4 to 6 digits" autocomplete="off"></label>
+          <button class="btn" type="submit">Change PIN</button>
+        </form>
+      </div>
+      <div class="setgroup">
+        <label class="switch"><input type="checkbox" id="setApprove"> New accounts need my approval</label>
+        <p class="note">When on, people who sign up on the kiosk can't clock in until you approve them on the Employees tab.</p>
+        <label class="switch"><input type="checkbox" id="setSound"> Beep when someone clocks in or out</label>
+      </div>
+      <span class="msg" id="setMsg"></span>
+      <p class="note">The manager screen locks itself after 3 minutes without a tap.</p>
+    </div>
+  </section>
+</div>
+
+<div class="overlay" id="overlay" hidden>
+  <div class="result" id="result" role="status"></div>
+</div>
+
+<div class="overlay" id="signup" hidden>
+  <form class="sheet" id="signupForm" novalidate>
+    <h2>Create your account</h2>
+    <p>Pick a 4-digit PIN you'll remember. You'll type it every time you clock in and out.</p>
+    <label class="field">Your name <input id="suName" type="text" maxlength="40" placeholder="First name and last initial" autocomplete="off"></label>
+    <div class="pinpair">
+      <label class="field">PIN <input id="suPin" type="password" inputmode="numeric" maxlength="4" autocomplete="off" placeholder="••••"></label>
+      <label class="field">Type it again <input id="suPin2" type="password" inputmode="numeric" maxlength="4" autocomplete="off" placeholder="••••"></label>
+    </div>
+    <button class="linkish" type="button" id="suSuggest">Suggest a PIN for me</button>
+    <label class="field">Student ID # (optional, for badge scanning) <input id="suBadge" type="text" maxlength="40" autocomplete="off"></label>
+    <span class="msg bad" id="suMsg"></span>
+    <div class="row">
+      <button class="btn line" type="button" id="suCancel">Cancel</button>
+      <button class="btn alt" type="submit">Create account</button>
+    </div>
+  </form>
+</div>
+
+<script>
+(function(){
+  const $ = s => document.querySelector(s);
+  const API = "/api/clock";
+  let board = {storeName:"Concession Stand", requireApproval:true, sound:true, pendingCount:0, open:[], today:[]};
+  let admin = null, mgrPin = null;
+  let code = "", mode = "punch";
+  let busy = false, overlayTimer = null, idleTimer = null, autoTimer = null, adminPoll = null;
+  let editing = null, confirmDel = null, editingEmp = null, confirmAllOut = false;
+
+  /* ---------- formatting ---------- */
+  const pad2 = n => String(n).padStart(2,"0");
+  const fmtTime = ms => new Date(ms).toLocaleTimeString([], {hour:"numeric", minute:"2-digit"});
+  const fmtDate = ms => new Date(ms).toLocaleDateString([], {weekday:"short", month:"short", day:"numeric"});
+  const fmtDur = ms => { const m = Math.max(0, Math.round(ms/60000)); return Math.floor(m/60) + "h " + pad2(m%60) + "m"; };
+  const hours = ms => (ms/3600000).toFixed(2);
+  const toLocalInput = ms => { const d = new Date(ms); return d.getFullYear()+"-"+pad2(d.getMonth()+1)+"-"+pad2(d.getDate())+"T"+pad2(d.getHours())+":"+pad2(d.getMinutes()); };
+  const dateInput = d => d.getFullYear()+"-"+pad2(d.getMonth()+1)+"-"+pad2(d.getDate());
+  const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+  const sod = d => new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  const weekStart = () => { const a = sod(new Date()); a.setDate(a.getDate() - (a.getDay()+6)%7); return a.getTime(); };
+  const isListed = e => e.active !== false;
+
+  /* ---------- network ---------- */
+  async function api(a, body){
+    let r;
+    try { r = await fetch(API, {method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({a, ...(body||{})})}); }
+    catch { throw Object.assign(new Error("Couldn't reach the server. Check the Wi-Fi and try again."), {status:0}); }
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) throw Object.assign(new Error(j.error || "Something went wrong. Try again."), {status:r.status});
+    return j;
+  }
+  const adminCall = (op, data) => api("admin", {pin: mgrPin, op, ...(data||{})});
+  function setStatus(t, warn){ const s = $("#status"); s.textContent = t; s.className = "status" + (warn ? " warn" : ""); }
+
+  /* ---------- sound ---------- */
+  let actx = null;
+  function beep(kind){
+    if (board.sound === false) return;
+    try {
+      actx = actx || new (window.AudioContext || window.webkitAudioContext)();
+      const notes = kind === "in" ? [660, 880] : kind === "out" ? [880, 600] : [220];
+      notes.forEach((f,i) => {
+        const o = actx.createOscillator(), g = actx.createGain(), t = actx.currentTime + i*0.12;
+        o.frequency.value = f; o.type = "sine";
+        g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.18, t+0.02); g.gain.exponentialRampToValueAtTime(0.0001, t+0.14);
+        o.connect(g).connect(actx.destination); o.start(t); o.stop(t+0.16);
+      });
+    } catch {}
+    try { navigator.vibrate && navigator.vibrate(kind === "err" ? [60,40,60] : 40); } catch {}
+  }
+
+  /* ---------- clock ---------- */
+  function tick(){
+    const d = new Date();
+    let h = d.getHours(); const ap = h >= 12 ? "PM" : "AM"; h = h % 12 || 12;
+    $("#clock").innerHTML = h + ":" + pad2(d.getMinutes()) + "<small>" + ap + "</small>";
+    $("#date").textContent = d.toLocaleDateString([], {weekday:"long", month:"long", day:"numeric"});
+    renderBoards();
+  }
+  setInterval(tick, 15000); tick();
+
+  /* ---------- keypad ---------- */
+  function renderCode(){
+    const el = $("#code");
+    if (code.length > 6) { el.innerHTML = '<span class="codetext">' + "•".repeat(Math.min(code.length,12)) + "</span>"; return; }
+    const n = Math.max(4, code.length);
+    el.innerHTML = Array.from({length:n}, (_,i) => '<span class="dot' + (i < code.length ? " on" : "") + '"></span>').join("");
+  }
+  function shake(){ const el = $("#code"); el.classList.remove("shake"); void el.offsetWidth; el.classList.add("shake"); }
+  function setMode(m){
+    mode = m; code = ""; clearTimeout(autoTimer); renderCode();
+    $("#prompt").innerHTML = m === "manager" ? "Manager PIN<span>Tap Enter when done, Clear to cancel</span>" : "Enter your PIN<span>or scan your badge</span>";
+  }
+  function press(k){
+    if (busy) return;
+    clearTimeout(autoTimer);
+    if (k === "clear") { if (mode === "manager" && !code) setMode("punch"); code = ""; renderCode(); return; }
+    if (k === "go") { submit(); return; }
+    if (code.length < 40) { code += k; renderCode(); }
+    // employee PINs are 4 digits: submit automatically after a short pause (a badge scanner keeps typing past 4)
+    if (mode === "punch" && /^\d{4}$/.test(code)) autoTimer = setTimeout(() => { if (/^\d{4}$/.test(code)) submit(); }, 350);
+  }
+  $("#pad").addEventListener("click", e => { const b = e.target.closest("[data-k]"); if (b) press(b.dataset.k); });
+
+  document.addEventListener("keydown", e => {
+    if (!$("#office").hidden || !$("#signup").hidden) return;
+    if (e.target.matches("input,select,textarea")) return;
+    if (!$("#overlay").hidden) { if (e.key === "Escape" || e.key === "Enter") { e.preventDefault(); hideOverlay(); } return; }
+    if (e.key === "Enter") { e.preventDefault(); press("go"); }
+    else if (e.key === "Backspace") { code = code.slice(0,-1); renderCode(); }
+    else if (e.key === "Escape") press("clear");
+    else if (/^[0-9A-Za-z\-]$/.test(e.key)) press(e.key);
+  });
+
+  /* ---------- punch ---------- */
+  async function submit(){
+    clearTimeout(autoTimer);
+    const c = code.trim(); code = ""; renderCode();
+    if (!c || busy) return;
+    busy = true;
+    try {
+      if (mode === "manager") {
+        try { admin = await api("login", {pin:c}); mgrPin = c; setMode("punch"); openOffice(); }
+        catch (err) { setMode("punch"); shake(); showResult({kind:"err", verb: err.status === 429 ? "Locked" : "Wrong PIN", detail: err.message}); }
+        return;
+      }
+      try {
+        const r = await api("punch", {code:c, weekStart: weekStart()});
+        if (r.status === "pending") showResult({kind:"err", verb:"Almost there", name:r.name, detail:"Your account is waiting for manager approval. Ask your manager to approve you, then try again."});
+        else if (r.status === "in") showResult({kind:"in", verb:"Clocked in", name:r.name, detail:"Started at " + fmtTime(r.in) + ". Have a good shift!", week:r.weekMs, undo: () => api("undo", {id:r.id, key:r.undoKey})});
+        else showResult({kind:"out", verb:"Clocked out", name:r.name, detail:"Worked " + fmtDur(r.out - r.in) + " · " + fmtTime(r.in) + " to " + fmtTime(r.out), week:r.weekMs, undo: () => api("undo", {id:r.id, key:r.undoKey})});
+        loadBoard();
+      } catch (err) {
+        shake();
+        showResult({kind:"err", verb: err.status === 404 ? "Not found" : err.status === 429 ? "Slow down" : "Didn't save", detail: err.message});
+      }
+    } finally { busy = false; }
+  }
+
+  function showResult(r){
+    const el = $("#result");
+    el.className = "result " + r.kind;
+    el.innerHTML = '<div class="verb">' + esc(r.verb) + "</div>" +
+      (r.name ? '<div class="name">' + esc(r.name) + "</div>" : "") +
+      '<div class="detail">' + esc(r.detail) + "</div>" +
+      (r.week != null ? '<div class="week">This week: ' + hours(r.week) + " h</div>" : "") +
+      '<div class="row">' + (r.undo ? '<button type="button" id="undoBtn">Undo</button>' : "") + '<button type="button" id="okBtn">Done</button></div>';
+    $("#overlay").hidden = false;
+    beep(r.kind === "in" || r.kind === "out" ? r.kind : r.kind === "err" ? "err" : "in");
+    $("#okBtn").onclick = hideOverlay;
+    if (r.undo) $("#undoBtn").onclick = async () => {
+      try { await r.undo(); hideOverlay(); showResult({kind:"ok", verb:"Undone", detail:"That punch was removed."}); loadBoard(); }
+      catch (err) { hideOverlay(); showResult({kind:"err", verb:"Couldn't undo", detail: err.message}); }
+    };
+    clearTimeout(overlayTimer);
+    overlayTimer = setTimeout(hideOverlay, r.undo ? 6000 : r.kind === "ok" ? 5000 : 3500);
+  }
+  function hideOverlay(){ clearTimeout(overlayTimer); $("#overlay").hidden = true; }
+  $("#overlay").addEventListener("click", e => { if (e.target.id === "overlay") hideOverlay(); });
+
+  /* ---------- create account ---------- */
+  function openSignup(){
+    ["#suName","#suPin","#suPin2","#suBadge"].forEach(s => $(s).value = "");
+    $("#suPin").type = $("#suPin2").type = "password";
+    $("#suMsg").textContent = "";
+    $("#signup").hidden = false; setTimeout(() => $("#suName").focus(), 50);
+  }
+  function closeSignup(){ $("#signup").hidden = true; }
+  $("#newBtn").onclick = openSignup;
+  $("#suCancel").onclick = closeSignup;
+  $("#signup").addEventListener("click", e => { if (e.target.id === "signup") closeSignup(); });
+  $("#signup").addEventListener("keydown", e => { if (e.key === "Escape") closeSignup(); });
+  $("#suSuggest").onclick = () => {
+    let p; do { p = String(Math.floor(1000 + Math.random()*9000)); } while (/(\d)\1\1/.test(p));
+    $("#suPin").value = $("#suPin2").value = p; $("#suPin").type = $("#suPin2").type = "text";
+    $("#suMsg").textContent = "";
+  };
+  $("#signupForm").addEventListener("submit", async e => {
+    e.preventDefault();
+    const m = $("#suMsg"), name = $("#suName").value.trim(), pin = $("#suPin").value.trim(), pin2 = $("#suPin2").value.trim(), badge = $("#suBadge").value.trim();
+    if (name.length < 2) { m.textContent = "Enter your name."; return; }
+    if (!/^\d{4}$/.test(pin)) { m.textContent = "Your PIN must be exactly 4 numbers."; return; }
+    if (pin !== pin2) { m.textContent = "The two PINs don't match. Type them again."; return; }
+    try {
+      const r = await api("signup", {name, pin, badge});
+      closeSignup();
+      showResult({kind:"ok", verb: r.pending ? "Account created" : "You're all set", name,
+        detail: r.pending ? "Your manager needs to approve you before your first clock-in. Remember your PIN!" : "Type your PIN on the keypad to clock in. Remember it!"});
+      loadBoard();
+    } catch (err) { m.textContent = err.message; }
+  });
+
+  /* ---------- kiosk boards ---------- */
+  function renderBoards(){
+    const now = Date.now();
+    const open = (board.open || []).slice().sort((a,b) => a.in - b.in);
+    $("#onCount").textContent = open.length + (open.length === 1 ? " person" : " people");
+    $("#onList").innerHTML = open.length ? open.map(s =>
+      '<li><span class="live"></span><span class="who">' + esc(s.name) + '</span><span class="since">since ' + fmtTime(s.in) + '</span><span class="dur">' + fmtDur(now - s.in) + "</span></li>"
+    ).join("") : '<li class="empty">Nobody is clocked in right now.</li>';
+    const done = (board.today || []).slice().sort((a,b) => b.out - a.out);
+    const tot = done.reduce((t,s) => t + s.out - s.in, 0);
+    $("#todayCount").textContent = done.length ? hours(tot) + " h worked" : "";
+    $("#todayList").innerHTML = done.length ? done.slice(0, 8).map(s =>
+      '<li><span class="done"></span><span class="who">' + esc(s.name) + '</span><span class="since">' + fmtTime(s.in) + " – " + fmtTime(s.out) + '</span><span class="dur">' + fmtDur(s.out - s.in) + "</span></li>"
+    ).join("") : '<li class="empty">Finished shifts from today show up here.</li>';
+  }
+
+  async function loadBoard(){
+    try {
+      board = await api("board", {since: sod(new Date()).getTime()});
+      $("#storeName").textContent = board.storeName; document.title = board.storeName + " Time Clock";
+      setStatus("Online");
+      renderBoards(); renderTopBadge();
+    } catch (err) { setStatus(err.status === 500 ? err.message : "Can't reach the server", true); }
+  }
+
+  /* ---------- manager office ---------- */
+  $("#mgrBtn").onclick = () => { if (!$("#office").hidden) { closeOffice(); return; } setMode(mode === "manager" ? "punch" : "manager"); };
+  function openOffice(){
+    $("#kiosk").hidden = true; $("#office").hidden = false; $("#mgrBtn").textContent = "Lock";
+    if (admin.employees.some(e => e.pending && isListed(e))) selectTab("staff");
+    renderOffice(); bumpIdle();
+    clearInterval(adminPoll); adminPoll = setInterval(refreshAdmin, 20000);
+  }
+  function closeOffice(){
+    $("#office").hidden = true; $("#kiosk").hidden = false;
+    admin = null; mgrPin = null; clearInterval(adminPoll);
+    editing = null; confirmDel = null; editingEmp = null; confirmAllOut = false; clearTimeout(idleTimer); setMode("punch");
+    renderTopBadge(); loadBoard();
+  }
+  $("#closeOffice").onclick = closeOffice;
+  function bumpIdle(){ clearTimeout(idleTimer); if (!$("#office").hidden) idleTimer = setTimeout(closeOffice, 180000); }
+  ["pointerdown","keydown"].forEach(ev => document.addEventListener(ev, bumpIdle, {passive:true}));
+
+  async function refreshAdmin(){
+    if (!mgrPin || editing || editingEmp || document.activeElement && document.activeElement.closest && document.activeElement.closest("form")) return;
+    try { admin = await adminCall("data"); renderOffice(); } catch (err) { if (err.status === 401) closeOffice(); }
+  }
+  async function doAdmin(op, data, msgEl){
+    try { admin = await adminCall(op, data); renderOffice(); return true; }
+    catch (err) {
+      if (err.status === 401) { closeOffice(); return false; }
+      const m = msgEl || $("#exportMsg"); m.className = "msg bad"; m.textContent = err.message; return false;
+    }
+  }
+
+  function selectTab(name){
+    document.querySelectorAll(".tab").forEach(x => x.setAttribute("aria-selected", x.dataset.tab === name ? "true" : "false"));
+    ["hours","staff","settings"].forEach(n => $("#tab-" + n).hidden = n !== name);
+  }
+  document.querySelectorAll(".tab").forEach(t => t.onclick = () => selectTab(t.dataset.tab));
+
+  function renderTopBadge(){
+    const n = admin ? admin.employees.filter(e => e.pending && isListed(e)).length : (board.pendingCount || 0);
+    if ($("#office").hidden) $("#mgrBtn").innerHTML = "Manager" + (n ? '<span class="badge-n" title="Accounts waiting for approval">' + n + "</span>" : "");
+    $("#pendTab").hidden = !n; $("#pendTab").textContent = n;
+  }
+
+  const empName = s => (admin.employees.find(e => e.id === s.empId) || {}).name || s.name || "Former employee";
+  const openShiftFor = id => admin.shifts.find(s => s.empId === id && !s.out);
+  const weekMs = id => { const a = weekStart(), now = Date.now(); return admin.shifts.filter(s => s.empId === id && s.in >= a).reduce((t,s) => t + ((s.out||now) - s.in), 0); };
+
+  function rangeBounds(){
+    const v = $("#range").value, now = new Date();
+    let a, b;
+    if (v === "today") { a = sod(now); b = new Date(a); b.setDate(b.getDate()+1); }
+    else if (v === "thisweek" || v === "lastweek") {
+      a = new Date(weekStart()); if (v === "lastweek") a.setDate(a.getDate() - 7);
+      b = new Date(a); b.setDate(b.getDate() + 7);
+    } else if (v === "thismonth") { a = new Date(now.getFullYear(), now.getMonth(), 1); b = new Date(now.getFullYear(), now.getMonth()+1, 1); }
+    else {
+      const f = $("#from").value, t = $("#to").value;
+      a = f ? new Date(f + "T00:00") : sod(now);
+      b = t ? new Date(t + "T00:00") : sod(now); b.setDate(b.getDate()+1);
+    }
+    return [a.getTime(), b.getTime()];
+  }
+  $("#range").onchange = () => { const c = $("#range").value === "custom"; $("#fromWrap").hidden = !c; $("#toWrap").hidden = !c; renderHours(); };
+  $("#from").onchange = $("#to").onchange = $("#empFilter").onchange = () => renderHours();
+
+  function visibleShifts(){
+    const [a,b] = rangeBounds(), f = $("#empFilter").value;
+    return admin.shifts.filter(s => s.in >= a && s.in < b && (!f || s.empId === f)).sort((x,y) => y.in - x.in);
+  }
+
+  function renderOffice(){
+    if (!admin || $("#office").hidden) return;
+    renderTopBadge();
+    $("#defaultPinBanner").hidden = !admin.settings.defaultPin;
+    const live = admin.employees.filter(e => isListed(e) && !e.pending).sort((a,b)=>a.name.localeCompare(b.name));
+    const opts = live.map(e => '<option value="' + esc(e.id) + '">' + esc(e.name) + "</option>").join("");
+    const sel = $("#empFilter"), cur = sel.value;
+    sel.innerHTML = '<option value="">Everyone</option>' + opts; sel.value = cur;
+    const se = $("#sEmp"), scur = se.value; se.innerHTML = opts || '<option value="">Add employees first</option>'; if (scur) se.value = scur;
+    if (!$("#sDate").value) $("#sDate").value = dateInput(new Date());
+    renderHours(); renderStaff();
+    $("#storeName").textContent = admin.settings.storeName;
+    if (document.activeElement !== $("#setName")) $("#setName").value = admin.settings.storeName || "";
+    $("#setApprove").checked = admin.settings.requireApproval !== false;
+    $("#setSound").checked = admin.settings.sound !== false;
+  }
+
+  function renderHours(){
+    if (!admin || $("#office").hidden) return;
+    const list = visibleShifts(), now = Date.now();
+    const per = new Map();
+    list.forEach(s => {
+      const k = s.empId; const p = per.get(k) || {name: empName(s), ms:0, n:0, open:false};
+      p.ms += (s.out || now) - s.in; p.n++; if (!s.out) p.open = true; per.set(k, p);
+    });
+    const tot = [...per.values()].sort((a,b) => b.ms - a.ms);
+    const grand = tot.reduce((t,p) => t + p.ms, 0);
+    $("#totals").innerHTML = tot.length ? (
+      '<div class="tot all"><span class="n">Everyone</span><span class="h">' + hours(grand) + ' h</span><span class="s">' + list.length + (list.length === 1 ? " shift" : " shifts") + '</span></div>' +
+      tot.map(p => '<div class="tot"><span class="n">' + esc(p.name) + '</span><span class="h">' + hours(p.ms) + ' h</span><span class="s">' + p.n + (p.n === 1 ? " shift" : " shifts") + (p.open ? " · on now" : "") + "</span></div>").join("")
+    ) : '<p class="empty">No shifts in this period yet.' + (admin.employees.length ? "" : " Add your employees on the Employees tab first.") + "</p>";
+
+    const openCount = admin.shifts.filter(s => !s.out).length;
+    $("#allOutWrap").innerHTML = !openCount ? "" : confirmAllOut
+      ? '<span class="confirm">Clock out all ' + openCount + '? <button class="btn danger" data-all="yes" type="button">Yes, clock out</button><button class="btn line" data-all="no" type="button">Cancel</button></span>'
+      : '<button class="btn line" data-all="ask" type="button">Clock everyone out (' + openCount + ")</button>";
+
+    $("#shiftRows").innerHTML = list.length ? list.map(s => {
+      const dur = (s.out || now) - s.in;
+      const status = !s.out ? '<span class="pill">On now</span>' : dur > 8*3600000 ? '<span class="pill flag">Check</span>' : "";
+      if (editing === s.id) {
+        return '<tr><td>' + esc(empName(s)) + '</td><td colspan="2"><input type="datetime-local" id="ein" value="' + toLocalInput(s.in) + '"></td>' +
+          '<td colspan="2"><input type="datetime-local" id="eout" value="' + (s.out ? toLocalInput(s.out) : "") + '"></td>' +
+          '<td><div class="acts"><button class="btn" data-act="save" data-id="' + s.id + '" type="button">Save</button><button class="btn line" data-act="cancel" type="button">Cancel</button></div></td></tr>';
+      }
+      const actions = confirmDel === s.id
+        ? '<div class="confirm">Delete this shift? <button class="btn danger" data-act="del2" data-id="' + s.id + '" type="button">Delete</button><button class="btn line" data-act="cancel" type="button">Keep</button></div>'
+        : '<div class="acts">' + (!s.out ? '<button class="btn line" data-act="out" data-id="' + s.id + '" type="button">Clock out</button>' : "") +
+          '<button class="btn line" data-act="edit" data-id="' + s.id + '" type="button">Edit</button><button class="btn danger" data-act="del" data-id="' + s.id + '" type="button">Delete</button></div>';
+      return '<tr><td>' + esc(empName(s)) + " " + status + '</td><td class="num">' + fmtDate(s.in) + '</td><td class="num">' + fmtTime(s.in) + '</td><td class="num">' + (s.out ? fmtTime(s.out) : "—") + '</td><td class="num">' + hours(dur) + "</td><td>" + actions + "</td></tr>";
+    }).join("") : '<tr><td colspan="6" class="empty">No shifts to show.</td></tr>';
+  }
+
+  $("#allOutWrap").addEventListener("click", async e => {
+    const b = e.target.closest("[data-all]"); if (!b) return;
+    if (b.dataset.all === "ask") { confirmAllOut = true; renderHours(); return; }
+    confirmAllOut = false;
+    if (b.dataset.all === "yes") await doAdmin("allOut"); else renderHours();
+  });
+
+  $("#shiftRows").addEventListener("click", async e => {
+    const b = e.target.closest("[data-act]"); if (!b) return;
+    const id = b.dataset.id, act = b.dataset.act;
+    if (act === "edit") { editing = id; confirmDel = null; renderHours(); return; }
+    if (act === "cancel") { editing = null; confirmDel = null; renderHours(); return; }
+    if (act === "del") { confirmDel = id; editing = null; renderHours(); return; }
+    if (act === "del2") { confirmDel = null; await doAdmin("deleteShift", {id}); }
+    if (act === "out") await doAdmin("clockOut", {id});
+    if (act === "save") {
+      const vin = $("#ein").value, vout = $("#eout").value;
+      const tin = vin ? new Date(vin).getTime() : NaN, tout = vout ? new Date(vout).getTime() : null;
+      if (isNaN(tin) || (tout !== null && tout <= tin)) { b.textContent = "Out must be after in"; return; }
+      editing = null;
+      await doAdmin("editShift", {id, in: tin, out: tout});
+    }
+  });
+
+  $("#shiftForm").addEventListener("submit", async e => {
+    e.preventDefault();
+    const m = $("#shiftMsg"), empId = $("#sEmp").value;
+    const d = $("#sDate").value, ti = $("#sIn").value, to = $("#sOut").value;
+    if (!empId) { m.className = "msg bad"; m.textContent = "Pick an employee."; return; }
+    if (!d || !ti || !to) { m.className = "msg bad"; m.textContent = "Fill in the date and both times."; return; }
+    const tin = new Date(d + "T" + ti).getTime(), tout = new Date(d + "T" + to).getTime();
+    if (tout <= tin) { m.className = "msg bad"; m.textContent = "Out time must be after the in time."; return; }
+    if (await doAdmin("addShift", {empId, in: tin, out: tout}, m)) { m.className = "msg good"; m.textContent = "Added " + fmtDur(tout - tin) + "."; }
+  });
+
+  $("#exportBtn").onclick = () => {
+    const m = $("#exportMsg"); m.textContent = "";
+    const list = visibleShifts().slice().reverse(), now = Date.now();
+    const q = v => '"' + String(v).replace(/"/g,'""') + '"';
+    const rows = [["Employee","Date","Clock in","Clock out","Hours"]];
+    const per = new Map();
+    list.forEach(s => {
+      const end = s.out || now; rows.push([empName(s), new Date(s.in).toLocaleDateString(), fmtTime(s.in), s.out ? fmtTime(s.out) : "still on", hours(end - s.in)]);
+      per.set(empName(s), (per.get(empName(s)) || 0) + end - s.in);
+    });
+    rows.push([]); rows.push(["Totals"]);
+    [...per].sort((a,b)=>a[0].localeCompare(b[0])).forEach(([n,ms]) => rows.push([n,"","","",hours(ms)]));
+    const csv = rows.map(r => r.map(q).join(",")).join("\r\n");
+    const [a] = rangeBounds();
+    const url = URL.createObjectURL(new Blob([csv], {type:"text/csv"}));
+    const link = document.createElement("a"); link.href = url; link.download = "hours-" + dateInput(new Date(a)) + ".csv";
+    document.body.appendChild(link); link.click(); link.remove(); setTimeout(() => URL.revokeObjectURL(url), 2000);
+    m.className = "msg good"; m.textContent = "Downloaded.";
+  };
+
+  /* staff */
+  function renderStaff(){
+    const pend = admin.employees.filter(e => e.pending && isListed(e)).sort((a,b) => (a.createdAt||0) - (b.createdAt||0));
+    const box = $("#pendingBox");
+    box.hidden = !pend.length;
+    box.innerHTML = '<h3>Waiting for approval (' + pend.length + ')</h3>' + pend.map(e =>
+      '<div class="preq"><span class="who">' + esc(e.name) + '</span><span class="meta">PIN ' + esc(e.pin) + (e.badge ? " · ID " + esc(e.badge) : "") + (e.createdAt ? " · signed up " + fmtDate(e.createdAt) : "") + '</span>' +
+      '<span class="acts"><button class="btn go" data-sact="approve" data-id="' + e.id + '" type="button">Approve</button><button class="btn danger" data-sact="deny" data-id="' + e.id + '" type="button">Deny</button></span></div>'
+    ).join("");
+
+    const list = admin.employees.filter(e => !(e.pending && isListed(e))).sort((a,b) => (b.active !== false) - (a.active !== false) || a.name.localeCompare(b.name));
+    $("#staffRows").innerHTML = list.length ? list.map(e => {
+      const on = !!openShiftFor(e.id), act = isListed(e);
+      if (editingEmp === e.id) {
+        return '<tr><td><input id="eeName" maxlength="40" value="' + esc(e.name) + '"></td><td><input id="eePin" inputmode="numeric" maxlength="4" value="' + esc(e.pin) + '"></td><td><input id="eeBadge" maxlength="40" value="' + esc(e.badge) + '"></td><td></td>' +
+          '<td colspan="2"><div class="acts"><span class="msg bad" id="eeMsg"></span><button class="btn" data-sact="esave" data-id="' + e.id + '" type="button">Save</button><button class="btn line" data-sact="cancel" type="button">Cancel</button></div></td></tr>';
+      }
+      const actions = confirmDel === "emp:" + e.id
+        ? '<div class="confirm">Remove ' + esc(e.name) + '? Their past hours stay. <button class="btn danger" data-sact="rm2" data-id="' + e.id + '" type="button">Remove</button><button class="btn line" data-sact="cancel" type="button">Keep</button></div>'
+        : '<div class="acts">' + (act ? '<button class="btn line" data-sact="edit" data-id="' + e.id + '" type="button">Edit</button><button class="btn danger" data-sact="rm" data-id="' + e.id + '" type="button">Remove</button>' : '<button class="btn line" data-sact="restore" data-id="' + e.id + '" type="button">Restore</button>') + "</div>";
+      return '<tr><td><b>' + esc(e.name) + '</b></td><td class="num">' + esc(e.pin) + '</td><td class="num">' + (esc(e.badge) || "—") + '</td><td class="num">' + hours(weekMs(e.id)) + " h</td><td>" +
+        (!act ? '<span class="pill flag">Removed</span>' : on ? '<span class="pill">On the clock</span>' : "Off") + "</td><td>" + actions + "</td></tr>";
+    }).join("") : '<tr><td colspan="6" class="empty">No employees yet. Add one above, or have them tap Create account on the time clock.</td></tr>';
+  }
+
+  async function staffAction(e){
+    const b = e.target.closest("[data-sact]"); if (!b) return;
+    const id = b.dataset.id, act = b.dataset.sact, msg = $("#addMsg");
+    if (act === "edit") { editingEmp = id; confirmDel = null; renderStaff(); return; }
+    if (act === "rm") { confirmDel = "emp:" + id; editingEmp = null; renderStaff(); return; }
+    if (act === "cancel") { confirmDel = null; editingEmp = null; renderStaff(); return; }
+    confirmDel = null;
+    if (act === "approve") await doAdmin("approve", {id}, msg);
+    if (act === "deny") await doAdmin("deny", {id}, msg);
+    if (act === "rm2") await doAdmin("remove", {id}, msg);
+    if (act === "restore") await doAdmin("restore", {id}, msg);
+    if (act === "esave") {
+      const name = $("#eeName").value.trim(), pin = $("#eePin").value.trim(), badge = $("#eeBadge").value.trim(), m = $("#eeMsg");
+      if (!name) { m.textContent = "Enter a name."; return; }
+      if (!/^\d{4}$/.test(pin)) { m.textContent = "PIN must be 4 digits."; return; }
+      try { admin = await adminCall("editEmp", {id, name, pin, badge}); editingEmp = null; renderOffice(); }
+      catch (err) { if (err.status === 401) closeOffice(); else m.textContent = err.message; }
+    }
+  }
+  $("#staffRows").addEventListener("click", staffAction);
+  $("#pendingBox").addEventListener("click", staffAction);
+
+  $("#addForm").addEventListener("submit", async e => {
+    e.preventDefault();
+    const m = $("#addMsg"), name = $("#newName").value.trim(), pin = $("#newPin").value.trim(), badge = $("#newBadge").value.trim();
+    if (!name) { m.className = "msg bad"; m.textContent = "Enter a name."; return; }
+    if (!/^\d{4}$/.test(pin)) { m.className = "msg bad"; m.textContent = "PIN must be exactly 4 digits."; return; }
+    if (await doAdmin("addEmp", {name, pin, badge}, m)) {
+      m.className = "msg good"; m.textContent = name + " added. Their PIN is " + pin + ".";
+      $("#newName").value = $("#newPin").value = $("#newBadge").value = ""; $("#newName").focus();
+    }
+  });
+
+  /* settings */
+  async function saveSettings(patch, okText){
+    const m = $("#setMsg");
+    if (await doAdmin("settings", patch, m)) { m.className = "msg good"; m.textContent = okText; return true; }
+  }
+  $("#nameForm").addEventListener("submit", e => { e.preventDefault(); const v = $("#setName").value.trim(); if (v) saveSettings({storeName: v}, "Store name saved."); });
+  $("#pinForm").addEventListener("submit", async e => {
+    e.preventDefault(); const v = $("#setPin").value.trim(); const m = $("#setMsg");
+    if (!/^\d{4,6}$/.test(v)) { m.className = "msg bad"; m.textContent = "Manager PIN must be 4 to 6 digits."; return; }
+    try { admin = await adminCall("settings", {managerPin: v}); mgrPin = v; renderOffice(); $("#setPin").value = ""; m.className = "msg good"; m.textContent = "Manager PIN changed. Don't forget it."; }
+    catch (err) { m.className = "msg bad"; m.textContent = err.message; }
+  });
+  $("#setApprove").onchange = e => saveSettings({requireApproval: e.target.checked}, e.target.checked ? "New accounts will wait for your approval." : "New accounts can clock in right away.");
+  $("#setSound").onchange = e => { board.sound = e.target.checked; saveSettings({sound: e.target.checked}, e.target.checked ? "Beep turned on." : "Beep turned off."); };
+
+  /* ---------- start ---------- */
+  renderCode();
+  (async () => { try { await navigator.wakeLock.request("screen"); document.addEventListener("visibilitychange", async () => { if (document.visibilityState === "visible") try { await navigator.wakeLock.request("screen"); } catch {} }); } catch {} })();
+  loadBoard();
+  setInterval(() => { if (document.visibilityState === "visible") loadBoard(); }, 10000);
+})();
+</script>
+</body>
+</html>
