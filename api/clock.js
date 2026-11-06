@@ -62,7 +62,7 @@ async function adminOp(d, b, now) {
   switch (b.op) {
     case "data": return;
     case "addEmp": {
-      const name = clean(b.name, 40), pin = clean(b.pin, 4), badge = clean(b.badge, 40);
+      const name = clean(b.name, 40), pin = clean(b.empPin, 4), badge = clean(b.badge, 40);
       if (!name) return fail(400, "Enter a name.");
       if (!/^\d{4}$/.test(pin)) return fail(400, "PIN must be exactly 4 digits.");
       if (pinTaken(d, pin)) return fail(409, "PIN " + pin + " is already in use.");
@@ -72,7 +72,7 @@ async function adminOp(d, b, now) {
     }
     case "editEmp": {
       if (!E) return fail(404, "Employee not found.");
-      const name = clean(b.name, 40), pin = clean(b.pin, 4), badge = clean(b.badge, 40);
+      const name = clean(b.name, 40), pin = clean(b.empPin, 4), badge = clean(b.badge, 40);
       if (!name) return fail(400, "Enter a name.");
       if (!/^\d{4}$/.test(pin)) return fail(400, "PIN must be 4 digits.");
       if (pinTaken(d, pin, E.id)) return fail(409, "That PIN is taken.");
@@ -82,6 +82,19 @@ async function adminOp(d, b, now) {
     case "approve": if (!E) return fail(404, "Employee not found."); E.pending = false; await pipe([putEmp(E)]); return;
     case "deny": if (!E) return; delete d.emp[E.id]; await pipe([["HDEL", P + "emp", E.id]]); return;
     case "remove": if (!E) return; E.active = false; await pipe([putEmp(E)]); return;
+    case "erase": {
+      // Permanently deletes ONE account, and only if it was already removed. Past shifts keep the name.
+      if (!E) return;
+      if (E.active !== false) return fail(409, "Only removed accounts can be erased. Remove " + E.name + " first.");
+      delete d.emp[E.id]; await pipe([["HDEL", P + "emp", E.id]]); return;
+    }
+    case "eraseRemoved": {
+      // Permanently deletes every removed account. Active and waiting accounts are never touched.
+      const gone = Object.values(d.emp).filter(e => e.active === false);
+      gone.forEach(e => delete d.emp[e.id]);
+      if (gone.length) await pipe([["HDEL", P + "emp", ...gone.map(e => e.id)]]);
+      return;
+    }
     case "restore":
       if (!E) return;
       if (pinTaken(d, E.pin, E.id)) return fail(409, "Someone else has PIN " + E.pin + " now. Add " + E.name + " again with a new PIN.");

@@ -294,6 +294,7 @@ details.addshift[open] summary{margin-bottom:12px}
           <tbody id="staffRows"></tbody>
         </table>
       </div>
+      <div class="toolbar" id="eraseWrap"></div>
       <p class="note">Badge code is the number printed under the barcode on a student ID. With a USB barcode scanner plugged into this device, a scan clocks them in or out with no typing.</p>
     </div>
 
@@ -739,10 +740,17 @@ details.addshift[open] summary{margin-bottom:12px}
       }
       const actions = confirmDel === "emp:" + e.id
         ? '<div class="confirm">Remove ' + esc(e.name) + '? Their past hours stay. <button class="btn danger" data-sact="rm2" data-id="' + e.id + '" type="button">Remove</button><button class="btn line" data-sact="cancel" type="button">Keep</button></div>'
-        : '<div class="acts">' + (act ? '<button class="btn line" data-sact="edit" data-id="' + e.id + '" type="button">Edit</button><button class="btn danger" data-sact="rm" data-id="' + e.id + '" type="button">Remove</button>' : '<button class="btn line" data-sact="restore" data-id="' + e.id + '" type="button">Restore</button>') + "</div>";
+        : confirmDel === "erase:" + e.id
+        ? '<div class="confirm">Erase ' + esc(e.name) + ' for good? Their past hours stay. <button class="btn danger" data-sact="erase2" data-id="' + e.id + '" type="button">Erase</button><button class="btn line" data-sact="cancel" type="button">Keep</button></div>'
+        : '<div class="acts">' + (act ? '<button class="btn line" data-sact="edit" data-id="' + e.id + '" type="button">Edit</button><button class="btn danger" data-sact="rm" data-id="' + e.id + '" type="button">Remove</button>' : '<button class="btn line" data-sact="restore" data-id="' + e.id + '" type="button">Restore</button><button class="btn danger" data-sact="erase" data-id="' + e.id + '" type="button">Erase</button>') + "</div>";
       return '<tr><td><b>' + esc(e.name) + '</b></td><td class="num">' + esc(e.pin) + '</td><td class="num">' + (esc(e.badge) || "—") + '</td><td class="num">' + hours(weekMs(e.id)) + " h</td><td>" +
         (!act ? '<span class="pill flag">Removed</span>' : on ? '<span class="pill">On the clock</span>' : "Off") + "</td><td>" + actions + "</td></tr>";
     }).join("") : '<tr><td colspan="6" class="empty">No employees yet. Add one above, or have them tap Create account on the time clock.</td></tr>';
+
+    const removedN = admin.employees.filter(e => !isListed(e)).length;
+    $("#eraseWrap").innerHTML = !removedN ? "" : confirmDel === "eraseAll"
+      ? '<span class="confirm">Erase all ' + removedN + ' removed ' + (removedN === 1 ? "account" : "accounts") + ' for good? Active accounts stay. <button class="btn danger" data-sact="eraseAll2" type="button">Erase</button><button class="btn line" data-sact="cancel" type="button">Keep</button></span>'
+      : '<button class="btn danger" data-sact="eraseAll" type="button">Erase removed accounts (' + removedN + ')</button>';
   }
 
   async function staffAction(e){
@@ -751,7 +759,11 @@ details.addshift[open] summary{margin-bottom:12px}
     if (act === "edit") { editingEmp = id; confirmDel = null; renderStaff(); return; }
     if (act === "rm") { confirmDel = "emp:" + id; editingEmp = null; renderStaff(); return; }
     if (act === "cancel") { confirmDel = null; editingEmp = null; renderStaff(); return; }
+    if (act === "erase") { confirmDel = "erase:" + id; editingEmp = null; renderStaff(); return; }
+    if (act === "eraseAll") { confirmDel = "eraseAll"; editingEmp = null; renderStaff(); return; }
     confirmDel = null;
+    if (act === "erase2") await doAdmin("erase", {id}, msg);
+    if (act === "eraseAll2") await doAdmin("eraseRemoved", {}, msg);
     if (act === "approve") await doAdmin("approve", {id}, msg);
     if (act === "deny") await doAdmin("deny", {id}, msg);
     if (act === "rm2") await doAdmin("remove", {id}, msg);
@@ -760,19 +772,20 @@ details.addshift[open] summary{margin-bottom:12px}
       const name = $("#eeName").value.trim(), pin = $("#eePin").value.trim(), badge = $("#eeBadge").value.trim(), m = $("#eeMsg");
       if (!name) { m.textContent = "Enter a name."; return; }
       if (!/^\d{4}$/.test(pin)) { m.textContent = "PIN must be 4 digits."; return; }
-      try { admin = await adminCall("editEmp", {id, name, pin, badge}); editingEmp = null; renderOffice(); }
+      try { admin = await adminCall("editEmp", {id, name, empPin: pin, badge}); editingEmp = null; renderOffice(); }
       catch (err) { if (err.status === 401) closeOffice(); else m.textContent = err.message; }
     }
   }
   $("#staffRows").addEventListener("click", staffAction);
   $("#pendingBox").addEventListener("click", staffAction);
+  $("#eraseWrap").addEventListener("click", staffAction);
 
   $("#addForm").addEventListener("submit", async e => {
     e.preventDefault();
     const m = $("#addMsg"), name = $("#newName").value.trim(), pin = $("#newPin").value.trim(), badge = $("#newBadge").value.trim();
     if (!name) { m.className = "msg bad"; m.textContent = "Enter a name."; return; }
     if (!/^\d{4}$/.test(pin)) { m.className = "msg bad"; m.textContent = "PIN must be exactly 4 digits."; return; }
-    if (await doAdmin("addEmp", {name, pin, badge}, m)) {
+    if (await doAdmin("addEmp", {name, empPin: pin, badge}, m)) {
       m.className = "msg good"; m.textContent = name + " added. Their PIN is " + pin + ".";
       $("#newName").value = $("#newPin").value = $("#newBadge").value = ""; $("#newName").focus();
     }
